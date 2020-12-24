@@ -3,16 +3,14 @@ package mr
 import (
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"io/ioutil"
+	"log"
+	"net/rpc"
 	"os"
 	"sort"
-	"sync"
 	"time"
 )
-
-import "log"
-import "net/rpc"
-import "hash/fnv"
 
 //
 // Map functions return a slice of KeyValue.
@@ -23,16 +21,12 @@ type KeyValue struct {
 }
 
 type ByKey []KeyValue
+
 func (a ByKey) Len() int           { return len(a) }
 func (a ByKey) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a ByKey) Less(i, j int) bool { return a[i].Key < a[j].Key }
 
-type worker struct {
-	isRunning_ bool
-	mutex sync.Mutex
-	id_ int
-}
-
+// Need some adjustment according your locale file directory
 const Dir = "/Users/zhouchouyi/cpp/6.824/src/main/mr-tmp"
 
 //
@@ -55,52 +49,24 @@ func readMapInput(key string) []byte {
 		log.Fatalf("cannot read %v", key)
 	}
 	file.Close()
-	return  content
+	return content
 }
 
-func (state *worker)setIsRunning(isRunning bool) {
-	state.mutex.Lock()
-	state.isRunning_ = isRunning
-	state.mutex.Unlock()
-}
-func (state* worker) getId() int {
-	index := -1
-	state.mutex.Lock()
-	index = state.id_
-	state.mutex.Unlock()
-	return  index
-}
-func (state* worker) setId (index int){
-
-
-	state.mutex.Lock()
-	state.id_ = index
-	state.mutex.Unlock()
-
-
-}
 func FileExist(filename string) bool {
 	if _, err := os.Stat(filename); err == nil {
-		return  true
+		return true
 	} else {
-		return  false
+		return false
 	}
 }
-func (state *worker) isRunning() bool {
-	state.mutex.Lock()
-	isRunning := state.isRunning_
-	state.mutex.Unlock()
-	return isRunning
-}
 
-
-func saveIntermediate(kva *[]KeyValue,index int) {
+func saveIntermediate(kva *[]KeyValue, index int) {
 	i := 0
 	var tempFiles []string
 	for i := 0; i < 10; i++ {
-		oname := fmt.Sprintf("mr-%v-%v",index,i)
+		oname := fmt.Sprintf("mr-%v-%v", index, i)
 		os.Remove(oname)
-		file, err := ioutil.TempFile("./", "prefix" + oname)
+		file, err := ioutil.TempFile("./", "prefix"+oname)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -113,15 +79,15 @@ func saveIntermediate(kva *[]KeyValue,index int) {
 			j++
 		}
 		reducerIndex := ihash((*kva)[i].Key) % 10
-		ofile, err := os.OpenFile(tempFiles[reducerIndex],os.O_APPEND|os.O_RDWR,os.ModePerm)
-		if err != nil{
-			fmt.Printf("error : %v in openfile when saveing intermediate data ",err)
+		ofile, err := os.OpenFile(tempFiles[reducerIndex], os.O_APPEND|os.O_RDWR, os.ModePerm)
+		if err != nil {
+			fmt.Printf("error : %v in openfile when saveing intermediate data ", err)
 		}
 		enc := json.NewEncoder(ofile)
 		for k := i; k < j; k++ {
 			err := enc.Encode((*kva)[k])
-			if err != nil{
-				fmt.Printf("error in encode %v ",err)
+			if err != nil {
+				fmt.Printf("error in encode %v ", err)
 				os.Exit(-1)
 			}
 		}
@@ -129,35 +95,35 @@ func saveIntermediate(kva *[]KeyValue,index int) {
 		i = j
 	}
 	for reducerIndex, oname := range tempFiles {
-		newname := "./" + fmt.Sprintf("mr-%v-%v",index,reducerIndex)
-		os.Rename(oname,newname)
+		newname := "./" + fmt.Sprintf("mr-%v-%v", index, reducerIndex)
+		os.Rename(oname, newname)
 	}
 }
 
-func loadIntermediate(index int) []KeyValue{
-	fs,err:= ioutil.ReadDir(Dir)
-	if err != nil{
-		fmt.Printf("read dir %v error %v \n",Dir,err)
+func loadIntermediate(index int) []KeyValue {
+	fs, err := ioutil.ReadDir(Dir)
+	if err != nil {
+		fmt.Printf("read dir %v error %v \n", Dir, err)
 	}
 	var kva []KeyValue
-	for _,fileInfo:=range fs{
+	for _, fileInfo := range fs {
 		filename := "./" + fileInfo.Name()
 		reducerIndex := -1
 		mapIndex := -1
-		matching,err := fmt.Sscanf(fileInfo.Name(),"mr-%v-%v",&mapIndex,&reducerIndex)
+		matching, err := fmt.Sscanf(fileInfo.Name(), "mr-%v-%v", &mapIndex, &reducerIndex)
 		if err == nil && matching == 2 && reducerIndex == index {
-			file,err := os.Open(filename)
-			if err != nil{
-				fmt.Printf("open %v error %v \n",filename,err)
+			file, err := os.Open(filename)
+			if err != nil {
+				fmt.Printf("open %v error %v \n", filename, err)
 				os.Exit(-1)
 			}
 			dec := json.NewDecoder(file)
 			for {
 				var kv KeyValue
-				if err := dec.Decode(&kv);err != nil{
+				if err := dec.Decode(&kv); err != nil {
 					break
 				}
-				kva = append(kva,kv)
+				kva = append(kva, kv)
 			}
 		}
 	}
@@ -165,16 +131,14 @@ func loadIntermediate(index int) []KeyValue{
 	return kva
 }
 
-
-
 func DoMap(mapf func(string, string) []KeyValue,
-	fileNames[]string,
+	fileNames []string,
 	index int) {
 	for _, file := range fileNames {
 		content := readMapInput(file)
-		kva := mapf(file,string(content))
+		kva := mapf(file, string(content))
 		sort.Sort(ByKey(kva))
-		saveIntermediate(&kva,index)
+		saveIntermediate(&kva, index)
 	}
 }
 
@@ -204,11 +168,11 @@ func DoReduce(reducef func(string, []string) string,
 	//fmt.Printf("%v end doing reduce \n",workerSock())
 	oldname := ofile.Name()
 	ofile.Close()
-	name := fmt.Sprintf("mr-out-%v",index)
-	os.Rename(oldname,name)
+	name := fmt.Sprintf("mr-out-%v", index)
+	os.Rename(oldname, name)
 }
 
-func doSubmit (taskType int,index int) bool {
+func doSubmit(taskType int, index int) bool {
 	request := SubmitTaskRequest{}
 	response := SubmitTaskResponse{}
 	request.TaskType_ = taskType
@@ -218,7 +182,7 @@ func doSubmit (taskType int,index int) bool {
 	//} else {
 	//	fmt.Printf("compelet REDUCE %v \n",request.Index)
 	//}
-	success := call("Master.SubmitTask",&request,&response)
+	success := call("Master.SubmitTask", &request, &response)
 	return success
 }
 
@@ -230,17 +194,15 @@ func Worker(mapf func(string, string) []KeyValue,
 	// Your worker implementation here.
 	// uncomment to send the Example RPC to the master.
 	// CallExample()
-	state := worker{false,sync.Mutex{},-1}
-	for  {
+	for {
 		request := AskTaskRequest{}
 		response := AskTaskResponse{}
-		success := call("Master.AskTask",&request,&response)
+		success := call("Master.AskTask", &request, &response)
 		//exit
 		if success == false {
 			fmt.Printf("aks task failed \n")
 			os.Exit(-1)
 		}
-		state.setId(response.Id_)
 		if response.TaskType_ == NONE {
 			//fmt.Printf("%v is sleeping \n",workerSock())
 			time.Sleep(time.Millisecond * 200)
@@ -249,14 +211,14 @@ func Worker(mapf func(string, string) []KeyValue,
 		if response.TaskType_ == MAP {
 			//map
 			//fmt.Printf("%v get map task %v \n",workerSock(),response.Id_)
-			DoMap(mapf,response.FileNames_,state.getId())
+			DoMap(mapf, response.FileNames_, response.Id_)
 			//finish map
-			doSubmit(MAP,state.getId())
+			doSubmit(MAP, response.Id_)
 		} else {
 			//reduce
 			//fmt.Printf("%v get reduce task %v \n",workerSock(),response.Id_)
-			DoReduce(reducef,state.getId())
-			doSubmit(REDUCE,state.getId())
+			DoReduce(reducef, response.Id_)
+			doSubmit(REDUCE, response.Id_)
 		}
 	}
 }
