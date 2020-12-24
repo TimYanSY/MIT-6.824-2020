@@ -26,7 +26,7 @@ func (a ByKey) Len() int           { return len(a) }
 func (a ByKey) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a ByKey) Less(i, j int) bool { return a[i].Key < a[j].Key }
 
-// Need some adjustment according your locale file directory
+// Need some adjustment according your local file directory
 const Dir = "/Users/zhouchouyi/cpp/6.824/src/main/mr-tmp"
 
 //
